@@ -97,6 +97,17 @@
     <div class="resp-grid" id="resp-grid"></div>
 
     <div class="obs-box" id="obs-box"></div>
+
+    <div class="divider"></div>
+    <div class="card-label">Registrar resultado</div>
+    <div class="envio-form">
+      <input type="text" id="nome-aluno-envio" class="envio-input"
+             placeholder="Nome completo do aluno" autocomplete="off" />
+      <button class="btn-primary envio-btn" id="btn-enviar" onclick="enviarResultado()">
+        Enviar ao Supabase
+      </button>
+    </div>
+    <div id="envio-status" class="envio-status" style="display:none"></div>
   </div>
 
 </main>

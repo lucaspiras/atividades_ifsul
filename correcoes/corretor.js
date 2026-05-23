@@ -12,13 +12,37 @@
 'use strict';
 
 // ═══════════════════════════════════════════════
+// SUPABASE
+// ═══════════════════════════════════════════════
+
+const SUPABASE_URL     = 'https://ksxaxkqnooercwndpdut.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_eK6ljdM_K9cAdWezjyegJw_SudfxPjj';
+const PALAVRA_SECRETA  = 'prova1';
+
+async function supabaseFetch(path, method, body, prefer = 'return=representation') {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Prefer': prefer
+    },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (!res.ok) throw new Error(`Supabase ${res.status}: ${await res.text()}`);
+  if (prefer === 'return=minimal') return null;
+  return res.json();
+}
+
+// ═══════════════════════════════════════════════
 // CONFIGURAÇÃO
 // ═══════════════════════════════════════════════
 
 /** Gabarito oficial da prova */
 const GABARITO = {
   1:'B', 2:'A', 3:'B', 4:'C', 5:'C',
-  6:'B', 7:'E', 8:'B', 9:'B', 10:'B',
+  6:'B', 7:'B', 8:'B', 9:'B', 10:'B',
   11:'B', 12:'C', 13:'D', 14:'C', 15:'B',
   16:'C', 17:'B', 18:'A', 19:'D', 20:'B'
 };
@@ -34,28 +58,40 @@ const ALTS = ['A','B','C','D','E'];
  * Ajuste fino feito com folha real impressa.
  */
 const LAYOUT = (() => {
-  // Margens e dimensões em mm (A4 = 210×297)
-  // A grade começa em ~35mm do topo e termina em ~260mm
-  // Largura útil da grade: 26mm a 184mm (158mm total)
-  // 6 colunas: Q(14mm) + A B C D E (cada ~28.8mm)
-  const pageW = 210, pageH = 297;
+  // ── Geometria dos marcadores ArUco (folha_optica.html) ──────────────────
+  // Marcadores 22×22mm posicionados a 5mm de cada borda → centro a 16mm.
+  // A homografia mapeia os centros dos marcadores para (0,0)…(1,1),
+  // portanto todas as coordenadas de bolha devem ser expressas relativas
+  // a esse referencial, NÃO às bordas da página.
+  const MX0 = 16;   // mm — centro marcador TL, eixo X (5 + 22/2)
+  const MY0 = 16;   // mm — centro marcador TL, eixo Y (5 + 22/2)
+  const MSW = 178;  // mm — span horizontal TL→TR (210 - 16 - 16)
+  const MSH = 265;  // mm — span vertical   TL→BL (297 - 16 - 16)
 
-  // X das colunas de bolha (centro, em mm desde borda esquerda)
-  // Grade: x inicial ≈ 36mm, largura ≈ 148mm → 5 colunas em 148mm
-  const xStart = 52;   // mm — centro coluna A
-  const xStep  = 26.5; // mm entre colunas
+  // ── Posições das bolhas em mm a partir da borda esquerda/superior ───────
+  // Folha: box-sizing border-box, width 210mm, padding 12mm cada lado.
+  // grade-wrapper: margin-left 26mm → borda esquerda a 12+26 = 38mm.
+  // Q col: 14mm → borda direita em 52mm.
+  // 5 colunas de bolha: (134-14)/5 = 24mm cada.
+  // Centro col A: 52 + 12 = 64mm  |  passo: 24mm
+  const xStart = 64;   // mm — centro coluna A
+  const xStep  = 24;   // mm — passo entre colunas
 
-  // Y das linhas (centro de cada bolha, em mm desde borda superior)
-  const yStart = 77;   // mm — centro questão 1
-  const yStep  = 9.2;  // mm entre questões
+  // yStart: centro da bolha da Q1 (medido da borda superior da página).
+  // Estimativa calculada: ~98mm. Use o canvas de debug para ajuste fino:
+  // se os pontos ficam acima das bolhas → aumente yStart; abaixo → diminua.
+  const yStart = 90.5;   // mm — ajuste se necessário
+  const yStep  = 9.5;  // mm — height exata do td na tabela (CSS: height 9.5mm)
 
   const bubbles = {};
   for (let q = 1; q <= 20; q++) {
     bubbles[q] = {};
     ALTS.forEach((alt, ai) => {
+      const x_mm = xStart + ai * xStep;
+      const y_mm = yStart + (q - 1) * yStep;
       bubbles[q][alt] = {
-        x: (xStart + ai * xStep) / pageW,
-        y: (yStart + (q - 1) * yStep) / pageH
+        x: (x_mm - MX0) / MSW,
+        y: (y_mm - MY0) / MSH
       };
     });
   }
@@ -66,8 +102,9 @@ const LAYOUT = (() => {
 // ESTADO GLOBAL
 // ═══════════════════════════════════════════════
 
-let imageData    = null;   // HTMLImageElement carregado
-let base64Image  = null;   // string base64
+let imageData      = null;   // HTMLImageElement carregado
+let base64Image    = null;   // string base64
+let lastCorrection = null;   // dados da última correção para envio ao Supabase
 
 // ═══════════════════════════════════════════════
 // GABARITO UI
@@ -725,6 +762,15 @@ function mostrarResultado(answers, gabarito) {
     obs.style.display = 'none';
   }
 
+  // Salvar para envio ao Supabase
+  lastCorrection = { answers, gabarito, acertos };
+
+  // Resetar seção de envio
+  document.getElementById('nome-aluno-envio').value = '';
+  document.getElementById('btn-enviar').disabled = false;
+  document.getElementById('btn-enviar').textContent = 'Enviar ao Supabase';
+  setEnvioStatus('', '');
+
   document.getElementById('result-section').style.display = 'block';
   document.getElementById('result-section').scrollIntoView({ behavior:'smooth', block:'start' });
 }
@@ -748,6 +794,75 @@ function setDetectStatus(type, msg) {
   el.className = 'detect-status ' + type;
   el.innerHTML = `<span class="dot"></span> ${msg}`;
   el.style.display = 'flex';
+}
+
+// ═══════════════════════════════════════════════
+// ENVIO SUPABASE
+// ═══════════════════════════════════════════════
+
+async function enviarResultado() {
+  if (!lastCorrection) return;
+
+  const nomeEl = document.getElementById('nome-aluno-envio');
+  const nome   = nomeEl.value.trim();
+  if (!nome) {
+    nomeEl.focus();
+    setEnvioStatus('err', 'Informe o nome completo do aluno antes de enviar.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-enviar');
+  btn.disabled    = true;
+  btn.textContent = 'Enviando...';
+  setEnvioStatus('', '');
+
+  try {
+    const { answers, gabarito, acertos } = lastCorrection;
+
+    const respostas = {};
+    const detalhes  = {};
+    for (let i = 1; i <= 20; i++) {
+      const marcada = answers[i] === '?' ? null : answers[i];
+      const correta = gabarito[i];
+      respostas[`q${i}`] = marcada;
+      detalhes[`q${i}`]  = { marcada, correta, acertou: marcada === correta };
+    }
+
+    const respostaId = crypto.randomUUID();
+
+    await supabaseFetch('respostas', 'POST', {
+      id: respostaId,
+      nome_aluno: nome,
+      palavra_secreta: PALAVRA_SECRETA,
+      respostas
+    }, 'return=minimal');
+
+    await supabaseFetch('resultados', 'POST', {
+      resposta_id: respostaId,
+      nome_aluno: nome,
+      palavra_secreta: PALAVRA_SECRETA,
+      acertos,
+      total: 20,
+      detalhes
+    }, 'return=minimal');
+
+    setEnvioStatus('ok', `✓ Resultado de ${nome} registrado com sucesso. ` +
+      `Nota: ${(acertos * 0.5).toFixed(1)} — o aluno pode consultar em consulta_resultado.html`);
+    btn.textContent = 'Enviado ✓';
+
+  } catch (err) {
+    setEnvioStatus('err', `Erro ao enviar: ${err.message}`);
+    btn.disabled    = false;
+    btn.textContent = 'Enviar ao Supabase';
+  }
+}
+
+function setEnvioStatus(type, msg) {
+  const el = document.getElementById('envio-status');
+  if (!type) { el.style.display = 'none'; return; }
+  el.className  = 'envio-status ' + type;
+  el.textContent = msg;
+  el.style.display = 'block';
 }
 
 // ═══════════════════════════════════════════════

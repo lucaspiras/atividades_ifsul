@@ -532,6 +532,51 @@ main {
 .detect-status.warn .dot { background: var(--yellow); }
 .detect-status.err  .dot { background: var(--red); }
 
+/* ── Envio Supabase ── */
+.envio-form {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  flex-wrap: wrap;
+}
+
+.envio-input {
+  flex: 1;
+  min-width: 200px;
+  background: var(--surface2);
+  border: 1px solid var(--border2);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  padding: 10px 14px;
+  outline: none;
+  transition: border-color .15s;
+}
+.envio-input:focus { border-color: var(--accent); }
+.envio-input::placeholder { color: var(--muted); }
+
+.envio-btn { flex: 0 0 auto; width: auto; padding: 10px 20px; }
+
+.envio-status {
+  margin-top: 10px;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--mono);
+  line-height: 1.5;
+}
+.envio-status.ok {
+  background: rgba(31,214,160,0.08);
+  border: 1px solid rgba(31,214,160,0.2);
+  color: var(--green);
+}
+.envio-status.err {
+  background: rgba(240,90,120,0.08);
+  border: 1px solid rgba(240,90,120,0.2);
+  color: var(--red);
+}
+
 /* ── Footer ── */
 footer {
   padding: 1.2rem;
